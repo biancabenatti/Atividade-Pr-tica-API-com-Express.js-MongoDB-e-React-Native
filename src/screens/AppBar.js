@@ -75,12 +75,17 @@ const AppBar = ({ navigation }) => {
     const [editingItem, setEditingItem] = useState(null);
     const [saving, setSaving] = useState(false);
     const [notice, setNotice] = useState('');
+    const guestScrollViewRef = useRef(null);
+    const [catalogSectionY, setCatalogSectionY] = useState(0);
 
-    /*
-     * =========================================
-     * ANIMAÇÃO DOS PÔSTERES
-     * =========================================
-     */
+    const scrollToCatalog = () => {
+        if (guestScrollViewRef.current) {
+            guestScrollViewRef.current.scrollTo({
+                y: catalogSectionY,
+                animated: true,
+            });
+        }
+    };
 
     const marqueeAnimation = useRef(
         new Animated.Value(0)
@@ -92,24 +97,11 @@ const AppBar = ({ navigation }) => {
         BANNERS.length *
         (POSTER_WIDTH + POSTER_GAP);
 
-    /*
-     * =========================================
-     * CARREGAR CONTEÚDOS
-     * =========================================
-     */
-
     const loadItems = useCallback(async () => {
-        if (!user) {
-            setItems([]);
-            setLoading(false);
-            return;
-        }
-
         setLoading(true);
 
         try {
             const content = await api.getContent();
-
             setItems(content);
             setError('');
         } catch (requestError) {
@@ -117,18 +109,12 @@ const AppBar = ({ navigation }) => {
         } finally {
             setLoading(false);
         }
-    }, [user]);
+    }, []);
 
     useFocusEffect(
         useCallback(() => {
-            if (user) {
-                loadItems();
-            } else {
-                setItems([]);
-                setLoading(false);
-                setError('');
-            }
-        }, [user, loadItems])
+            loadItems();
+        }, [loadItems])
     );
 
     /*
@@ -397,6 +383,7 @@ const AppBar = ({ navigation }) => {
             {!user ? (
 
                 <ScrollView
+                    ref={guestScrollViewRef}
                     style={styles.scroll}
                     contentContainerStyle={styles.guestContent}
                     showsVerticalScrollIndicator={false}
@@ -521,15 +508,160 @@ const AppBar = ({ navigation }) => {
                             CRIAR CONTA
                         </Button>
 
-                    </View>
+                        <Button
+                            mode="outlined"
+                            icon="eye-outline"
+                            textColor="#DDD6FE"
+                            style={styles.guestTertiaryButton}
+                            contentStyle={
+                                styles.guestButtonContent
+                            }
+                            labelStyle={
+                                styles.guestButtonLabel
+                            }
+                            onPress={scrollToCatalog}
+                        >
+                            VER CONTEÚDO
+                        </Button>
 
-                    {/* =================================
-                        FRASE INFERIOR
-                    ================================= */}
+                    </View>
 
                     <Text style={styles.footerText}>
                         Seu conteúdo. Sua coleção. Seu espaço.
                     </Text>
+
+                    <View
+                        onLayout={(event) => {
+                            setCatalogSectionY(
+                                event.nativeEvent.layout.y
+                            );
+                        }}
+                        style={styles.guestCatalogSection}
+                    >
+                        <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel="Pesquisar conteúdos"
+                            onPress={() =>
+                                navigation.navigate('Pesquisa')
+                            }
+                            style={({ pressed }) => [
+                                styles.search,
+                                pressed &&
+                                styles.searchPressed,
+                            ]}
+                        >
+                            <Icon
+                                source="magnify"
+                                size={21}
+                                color="#A78BFA"
+                            />
+                            <Text style={styles.searchText}>
+                                Pesquisar no catálogo...
+                            </Text>
+                            <Icon
+                                source="arrow-right"
+                                size={19}
+                                color="#71717A"
+                            />
+                        </Pressable>
+
+                        <View style={styles.sectionHeader}>
+                            <View style={styles.sectionInfo}>
+                                <Text style={styles.sectionTitle}>
+                                    Catálogo de Conteúdos
+                                </Text>
+                                <Text style={styles.sectionSubtitle}>
+                                    {items.length > 0
+                                        ? `${items.length} ${
+                                            items.length === 1
+                                                ? 'título disponível'
+                                                : 'títulos disponíveis'
+                                        }`
+                                        : 'Acesso público para visualização'}
+                                </Text>
+                            </View>
+                        </View>
+
+                        {loading && (
+                            <View style={styles.stateCard}>
+                                <Icon
+                                    source="loading"
+                                    size={30}
+                                    color="#A78BFA"
+                                />
+                                <Text style={styles.stateTitle}>
+                                    Carregando conteúdos
+                                </Text>
+                                <Text style={styles.stateText}>
+                                    Aguarde enquanto carregamos o catálogo.
+                                </Text>
+                            </View>
+                        )}
+
+                        {!loading && error && (
+                            <View style={styles.stateCard}>
+                                <View style={styles.stateIcon}>
+                                    <Icon
+                                        source="alert-circle-outline"
+                                        size={28}
+                                        color="#A78BFA"
+                                    />
+                                </View>
+                                <Text style={styles.stateTitle}>
+                                    Não foi possível carregar
+                                </Text>
+                                <Text style={styles.stateText}>
+                                    {error}
+                                </Text>
+                                <Button
+                                    mode="outlined"
+                                    textColor="#C4B5FD"
+                                    style={styles.retryButton}
+                                    onPress={loadItems}
+                                >
+                                    Tentar novamente
+                                </Button>
+                            </View>
+                        )}
+
+                        {!loading &&
+                            !error &&
+                            items.length === 0 && (
+                                <View style={styles.stateCard}>
+                                    <View style={styles.emptyIcon}>
+                                        <Icon
+                                            source="movie-open-outline"
+                                            size={30}
+                                            color="#A78BFA"
+                                        />
+                                    </View>
+                                    <Text style={styles.stateTitle}>
+                                        Catálogo ainda sem títulos
+                                    </Text>
+                                    <Text style={styles.stateText}>
+                                        Crie uma conta e acesse a área administrativa para cadastrar os primeiros conteúdos.
+                                    </Text>
+                                </View>
+                            )}
+
+                        {!loading &&
+                            !error &&
+                            items.length > 0 && (
+                                <View style={styles.cards}>
+                                    {items.map((item) => (
+                                        <View
+                                            key={item._id}
+                                            style={styles.cardWrapper}
+                                        >
+                                            <ModCard
+                                                item={item}
+                                                isAuthenticated={false}
+                                            />
+                                        </View>
+                                    ))}
+                                </View>
+                            )}
+                    </View>
 
                 </ScrollView>
 
@@ -1009,6 +1141,19 @@ const styles = StyleSheet.create({
     guestSecondaryButton: {
         borderRadius: 14,
         borderColor: '#4D4163',
+        marginBottom: 10,
+    },
+
+    guestTertiaryButton: {
+        borderRadius: 14,
+        borderColor: '#6D4AA8',
+    },
+
+    guestCatalogSection: {
+        marginTop: 36,
+        paddingHorizontal: 18,
+        width: '100%',
+        paddingBottom: 40,
     },
 
     guestButtonContent: {
