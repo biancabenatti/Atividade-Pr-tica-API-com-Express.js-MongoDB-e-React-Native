@@ -62,7 +62,7 @@ function createSession(user) {
     const token = jwt.sign({ sub: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
     return {
         token,
-        user: { id: user.id, name: user.name, email: user.email },
+        user: { id: user.id, name: user.name, email: user.email, avatarUrl: user.avatarUrl || null },
     };
 }
 
@@ -118,7 +118,55 @@ app.post('/api/auth/login', asyncRoute(async (req, res) => {
 app.get('/api/auth/me', requireAuth, asyncRoute(async (req, res) => {
     const user = await User.findById(req.userId);
     if (!user) return res.status(401).json({ message: 'Usuário não encontrado.' });
-    return res.json({ id: user.id, name: user.name, email: user.email });
+    return res.json({ id: user.id, name: user.name, email: user.email, avatarUrl: user.avatarUrl || null });
+}));
+
+app.put('/api/auth/password', requireAuth, asyncRoute(async (req, res) => {
+    const currentPassword = typeof req.body.currentPassword === 'string' ? req.body.currentPassword : '';
+    const newPassword = typeof req.body.newPassword === 'string' ? req.body.newPassword : '';
+
+    if (!currentPassword || !newPassword) {
+        return res.status(400).json({ message: 'Informe a senha atual e a nova senha.' });
+    }
+    if (newPassword.length < 8 || newPassword.length > 72) {
+        return res.status(400).json({ message: 'A nova senha deve ter entre 8 e 72 caracteres.' });
+    }
+
+    const user = await User.findById(req.userId).select('+passwordHash');
+    if (!user) return res.status(404).json({ message: 'Usuário não encontrado.' });
+
+    const passwordMatches = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!passwordMatches) {
+        return res.status(400).json({ message: 'A senha atual informada está incorreta.' });
+    }
+
+    user.passwordHash = await bcrypt.hash(newPassword, 12);
+    await user.save();
+    return res.json({ message: 'Senha alterada com sucesso.' });
+}));
+
+app.post('/api/auth/avatar', requireAuth, uploadImage.single('avatar'), asyncRoute(async (req, res) => {
+    if (!req.file) return res.status(400).json({ message: 'Selecione uma imagem para o avatar.' });
+    const user = await User.findById(req.userId);
+    if (!user) {
+        await fs.promises.unlink(req.file.path);
+        return res.status(404).json({ message: 'Usuário não encontrado.' });
+    }
+    const previousAvatar = user.avatarUrl;
+    user.avatarUrl = `/uploads/${req.file.filename}`;
+    await user.save();
+    await removeStoredImage(previousAvatar);
+    return res.json({ id: user.id, name: user.name, email: user.email, avatarUrl: user.avatarUrl });
+}));
+
+app.delete('/api/auth/avatar', requireAuth, asyncRoute(async (req, res) => {
+    const user = await User.findById(req.userId);
+    if (!user) return res.status(404).json({ message: 'Usuário não encontrado.' });
+    const previousAvatar = user.avatarUrl;
+    user.avatarUrl = null;
+    await user.save();
+    await removeStoredImage(previousAvatar);
+    return res.json({ id: user.id, name: user.name, email: user.email, avatarUrl: null });
 }));
 
 app.get('/api/content', asyncRoute(async (req, res) => {
@@ -140,6 +188,11 @@ app.post('/api/content', requireAuth, asyncRoute(async (req, res) => {
 }));
 
 app.put('/api/content/:id', requireAuth, asyncRoute(async (req, res) => {
+    const item = await Content.findById(req.params.id);
+    if (!item) return res.status(404).json({ message: 'Conteúdo não encontrado.' });
+    if (item.createdBy.toString() !== req.userId) {
+        return res.status(403).json({ message: 'Você não tem permissão para alterar este conteúdo.' });
+    }
     const updates = {};
     for (const field of ['title', 'subtitle', 'description']) {
         if (typeof req.body[field] === 'string') updates[field] = req.body[field].trim();
@@ -150,14 +203,17 @@ app.put('/api/content/:id', requireAuth, asyncRoute(async (req, res) => {
     if (updates.title !== undefined && !updates.title) {
         return res.status(400).json({ message: 'O título é obrigatório.' });
     }
-    const item = await Content.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
-    if (!item) return res.status(404).json({ message: 'Conteúdo não encontrado.' });
+    Object.assign(item, updates);
+    await item.save();
     return res.json(item);
 }));
 
 app.delete('/api/content/:id', requireAuth, asyncRoute(async (req, res) => {
     const item = await Content.findById(req.params.id);
     if (!item) return res.status(404).json({ message: 'Conteúdo não encontrado.' });
+    if (item.createdBy.toString() !== req.userId) {
+        return res.status(403).json({ message: 'Você não tem permissão para excluir este conteúdo.' });
+    }
     await removeStoredImage(item.imageUrl);
     await item.deleteOne();
     return res.status(204).end();
@@ -170,6 +226,10 @@ app.post('/api/content/:id/image', requireAuth, uploadImage.single('image'), asy
         await fs.promises.unlink(req.file.path);
         return res.status(404).json({ message: 'Conteúdo não encontrado.' });
     }
+    if (item.createdBy.toString() !== req.userId) {
+        await fs.promises.unlink(req.file.path);
+        return res.status(403).json({ message: 'Você não tem permissão para alterar a imagem deste conteúdo.' });
+    }
     const previousImage = item.imageUrl;
     item.imageUrl = `/uploads/${req.file.filename}`;
     await item.save();
@@ -180,6 +240,9 @@ app.post('/api/content/:id/image', requireAuth, uploadImage.single('image'), asy
 app.delete('/api/content/:id/image', requireAuth, asyncRoute(async (req, res) => {
     const item = await Content.findById(req.params.id);
     if (!item) return res.status(404).json({ message: 'Conteúdo não encontrado.' });
+    if (item.createdBy.toString() !== req.userId) {
+        return res.status(403).json({ message: 'Você não tem permissão para excluir a imagem deste conteúdo.' });
+    }
     const previousImage = item.imageUrl;
     item.imageUrl = null;
     await item.save();

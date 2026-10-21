@@ -1,6 +1,7 @@
 import { Alert, StyleSheet, View } from 'react-native';
 import { Avatar, Button, Divider, Text } from 'react-native-paper';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../services/api';
 
 export const CabecalhoMenu = ({ navigation }) => {
     const { user, logout } = useAuth();
@@ -32,12 +33,20 @@ export const CabecalhoMenu = ({ navigation }) => {
         <View style={styles.container}>
 
             <View style={styles.profile}>
-                <Avatar.Icon
-                    size={56}
-                    icon={user ? 'account' : 'account-outline'}
-                    color="#FFFFFF"
-                    style={styles.avatar}
-                />
+                {user?.avatarUrl ? (
+                    <Avatar.Image
+                        size={56}
+                        source={{ uri: api.imageUrl(user.avatarUrl) }}
+                        style={styles.avatar}
+                    />
+                ) : (
+                    <Avatar.Icon
+                        size={56}
+                        icon={user ? 'account' : 'account-outline'}
+                        color="#FFFFFF"
+                        style={styles.avatar}
+                    />
+                )}
 
                 <View style={styles.userInfo}>
                     <Text style={styles.name} numberOfLines={1}>

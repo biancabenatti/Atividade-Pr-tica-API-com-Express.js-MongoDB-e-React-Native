@@ -4,7 +4,7 @@ async function request(path, { token, ...options } = {}) {
     const headers = { ...(options.headers || {}) };
     if (token) headers.Authorization = `Bearer ${token}`;
     if (options.body && !(options.body instanceof FormData)) {
-        headers['Content-Type'] = 'application/json';
+        headers['Content-Type'] = 'application/json; charset=utf-8';
         options.body = JSON.stringify(options.body);
     }
 
@@ -87,5 +87,49 @@ export const api = {
     },
     register(name, email, password) {
         return request('/api/auth/register', { method: 'POST', body: { name, email, password } });
+    },
+    changePassword(currentPassword, newPassword, token) {
+        return request('/api/auth/password', { method: 'PUT', body: { currentPassword, newPassword }, token });
+    },
+    uploadAvatar(asset, token) {
+        const form = new FormData();
+        const name = asset.fileName || `avatar-${Date.now()}.jpg`;
+        if (asset.file) {
+            form.append('avatar', asset.file, name);
+        } else {
+            form.append('avatar', {
+                uri: asset.uri,
+                name,
+                type: asset.mimeType || 'image/jpeg',
+            });
+        }
+
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', `${API_URL}/api/auth/avatar`);
+            if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+            xhr.onload = () => {
+                let body = null;
+                if (xhr.responseText) {
+                    try {
+                        body = JSON.parse(xhr.responseText);
+                    } catch {
+                        reject(new Error('O servidor retornou uma resposta inválida.'));
+                        return;
+                    }
+                }
+                if (xhr.status < 200 || xhr.status >= 300) {
+                    reject(new Error(body?.message || `Erro na solicitação (${xhr.status}).`));
+                    return;
+                }
+                resolve(body);
+            };
+            xhr.onerror = () => reject(new Error('Não foi possível conectar ao servidor.'));
+            xhr.onabort = () => reject(new Error('O envio da imagem foi cancelado.'));
+            xhr.send(form);
+        });
+    },
+    deleteAvatar(token) {
+        return request('/api/auth/avatar', { method: 'DELETE', token });
     },
 };

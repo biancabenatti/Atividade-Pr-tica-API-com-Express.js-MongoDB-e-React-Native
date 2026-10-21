@@ -47,6 +47,16 @@ export function AuthProvider({ children }) {
         setSession(null);
     };
 
+    const updateUser = async (updatedFields) => {
+        if (!session) return;
+        const nextSession = {
+            ...session,
+            user: { ...session.user, ...updatedFields },
+        };
+        await storeSession(JSON.stringify(nextSession));
+        setSession(nextSession);
+    };
+
     const value = useMemo(() => ({
         token: session?.token || null,
         user: session?.user || null,
@@ -54,6 +64,7 @@ export function AuthProvider({ children }) {
         login,
         register,
         logout,
+        updateUser,
     }), [session, ready]);
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
